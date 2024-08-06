@@ -55,6 +55,9 @@ static int rgb_printf(camera_fb_t *fb, uint32_t color, const char *format, ...)
 void lidar_task(void *pvParameters)
 {
     camera_fb_t *frame = NULL;
+
+    esp_rom_gpio_pad_select_gpio(GPIO_NUM_0);
+    gpio_set_direction(GPIO_NUM_0, GPIO_MODE_INPUT);
     while (1)
     {
         size_t _jpg_buf_len;
@@ -62,14 +65,20 @@ void lidar_task(void *pvParameters)
 
         xQueueReceive(xQueueLIDARFrame, &frame, portMAX_DELAY);
 
-        bool jpeg_converted = frame2jpg(frame, 80, &_jpg_buf, &_jpg_buf_len);
-        if(!jpeg_converted){
-            ESP_LOGE(TAG, "JPEG compression failed");
-        }
-        else
+        if (!gpio_get_level(GPIO_NUM_0))
         {
-            /* code */
+            bool jpeg_converted = frame2jpg(frame, 80, &_jpg_buf, &_jpg_buf_len);
+            if(!jpeg_converted){
+                ESP_LOGE(TAG, "JPEG compression failed");
+            }
+            else
+            {
+                ESP_LOGI(TAG, "JPEG compression DONE");
+            }
         }
+        
+
+
         
         if (_jpg_buf != NULL)
         {
