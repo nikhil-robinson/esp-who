@@ -61,7 +61,7 @@
 #define BSP_LCD_SPI_CLK       (GPIO_NUM_21)
 #define BSP_LCD_SPI_CS        (GPIO_NUM_44)
 #define BSP_LCD_DC            (GPIO_NUM_43)
-#define BSP_LCD_RST           (GPIO_NUM_48)
+#define BSP_LCD_RST           (GPIO_NUM_NC)
 #define BSP_LCD_BACKLIGHT     (GPIO_NUM_48)
 
 /* Camera */

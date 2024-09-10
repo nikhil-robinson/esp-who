@@ -3,7 +3,7 @@
 #include "who_lcd.h"
 #include "VL53L0X.h"
 #include "fb_gfx.h"
-
+#include "bsp/esp-bsp.h"
 #define TAG "WHO"
 
 static QueueHandle_t xQueueAIFrame = NULL;
@@ -58,7 +58,7 @@ void lidar_task(void *pvParameters)
     if (!vl.init())
     {
         ESP_LOGE(TAG, "Failed to initialize VL53L0X :(");
-        vTaskDelay(portMAX_DELAY);
+        // vTaskDelay(portMAX_DELAY);
     }
     while (1)
     {
@@ -90,6 +90,8 @@ extern "C" void app_main()
     xQueueAIFrame = xQueueCreate(2, sizeof(camera_fb_t *));
     xQueueLCDFrame = xQueueCreate(2, sizeof(camera_fb_t *));
     xQueueLIDARFrame = xQueueCreate(2, sizeof(camera_fb_t *));
+
+    bsp_sdcard_mount();
 
     register_camera(PIXFORMAT_RGB565, FRAMESIZE_240X240, 2, xQueueAIFrame);
     register_human_face_detection(xQueueAIFrame, NULL, NULL, xQueueLIDARFrame, false);
