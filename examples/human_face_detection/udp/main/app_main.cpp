@@ -173,6 +173,7 @@ static void camer_read_task(void *arg)
                         if (err < 0)
                         {
                             ESP_LOGE(TAG, "Error sending chunk %u: errno %d", (unsigned)chunks, errno);
+                            esp_camera_fb_return(frame);
                             break;
                         }
 
