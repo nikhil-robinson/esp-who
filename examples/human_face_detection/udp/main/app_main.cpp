@@ -145,16 +145,17 @@ static void camer_read_task(void *arg)
             ESP_LOGE(TAG, "recvfrom failed: errno %d", errno);
             continue;
         }
-        
+
         inet_ntoa_r(((struct sockaddr_in *)&source_addr)->sin_addr, addr_str, sizeof(addr_str) - 1);
 
+        ESP_LOGI(TAG, "Received %d bytes from %s:", len, addr_str);
         while (1)
         {
             if (!is_connected)
             {
                 break;
             }
-            
+
             camera_fb_t *frame = NULL;
             if (xQueueReceive(xQueueUDPFrame, &frame, portMAX_DELAY) == pdTRUE)
             {
