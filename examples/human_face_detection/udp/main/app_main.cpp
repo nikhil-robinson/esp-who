@@ -31,9 +31,6 @@ static const char *TAG = "udp_camera";
 #define EXAMPLE_ESP_WIFI_CHANNEL 2
 #define EXAMPLE_MAX_STA_CONN 1
 
-struct sockaddr_storage source_addr;
-socklen_t socklen = sizeof(source_addr);
-
 static volatile bool is_connected = false;
 
 #define MAX_UDP_CHUNK 60000 // safe chunk size
@@ -99,62 +96,95 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         wifi_event_ap_stadisconnected_t *event = (wifi_event_ap_stadisconnected_t *)event_data;
         ESP_LOGI(TAG, "station " MACSTR " leave, AID=%d", MAC2STR(event->mac), event->aid);
         is_connected = false;
-        memset(&source_addr, 0, sizeof(source_addr)); // clear addr on disconnect
     }
 }
 
 static void camer_read_task(void *arg)
 {
-    (void)arg;
-    struct sockaddr_in dest_addr;
-    dest_addr.sin_family = AF_INET;
-    dest_addr.sin_port = htons(PORT);
-    dest_addr.sin_addr.s_addr = INADDR_BROADCAST;
+    char rx_buffer[128];
+    char addr_str[128];
+    int addr_family = AF_INET;
+    int ip_protocol = 0;
+    struct sockaddr_in6 dest_addr;
 
-    int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
+    struct sockaddr_in *dest_addr_ip4 = (struct sockaddr_in *)&dest_addr;
+    dest_addr_ip4->sin_addr.s_addr = htonl(INADDR_ANY);
+    dest_addr_ip4->sin_family = AF_INET;
+    dest_addr_ip4->sin_port = htons(PORT);
+    ip_protocol = IPPROTO_IP;
+
+    int sock = socket(AF_INET, SOCK_DGRAM, ip_protocol);
     if (sock < 0)
     {
         ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
-        return;
+        vTaskDelete(NULL);
     }
+    ESP_LOGI(TAG, "Socket created");
 
-    int broadcastEnable = 1;
-    setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable));
-    ESP_LOGI(TAG, "UDP broadcast socket created");
+    struct timeval timeout;
+    timeout.tv_sec = 10;
+    timeout.tv_usec = 0;
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout);
 
-    uint32_t frame_id = 0;
-
-    while (1)
+    int err = bind(sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+    if (err < 0)
     {
-        camera_fb_t *frame = NULL;
-        if (xQueueReceive(xQueueUDPFrame, &frame, portMAX_DELAY) == pdTRUE)
+        ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
+    }
+    ESP_LOGI(TAG, "Socket bound, port %d", PORT);
+
+    struct sockaddr_storage source_addr; // Large enough for both IPv4 or IPv6
+    socklen_t socklen = sizeof(source_addr);
+
+    while (true)
+    {
+
+        int len = recvfrom(sock, rx_buffer, sizeof(rx_buffer) - 1, 0, (struct sockaddr *)&source_addr, &socklen);
+        if (len < 0)
         {
-            if (is_connected)
+            ESP_LOGE(TAG, "recvfrom failed: errno %d", errno);
+            continue;
+        }
+        
+        inet_ntoa_r(((struct sockaddr_in *)&source_addr)->sin_addr, addr_str, sizeof(addr_str) - 1);
+
+        while (1)
+        {
+            if (!is_connected)
             {
-                size_t offset = 0;
-                uint32_t chunks = 0;
-                while (offset < frame->len)
-                {
-                    size_t to_send = frame->len - offset;
-                    if (to_send > MAX_UDP_CHUNK)
-                        to_send = MAX_UDP_CHUNK;
-
-                    int err = sendto(sock,frame->buf + offset,to_send,0,(struct sockaddr *)&dest_addr,sizeof(dest_addr));
-                    if (err < 0)
-                    {
-                        ESP_LOGE(TAG, "Error sending chunk %u: errno %d", (unsigned)chunks, errno);
-                        break;
-                    }
-
-                    offset += to_send;
-                    ++chunks;
-                }
-                if (offset == frame->len)
-                {
-                    ESP_LOGI(TAG, "Frame sent in %u chunks, size: %zu bytes", (unsigned)chunks, frame->len);
-                }
+                break;
             }
-            esp_camera_fb_return(frame); // return after sending
+            
+            camera_fb_t *frame = NULL;
+            if (xQueueReceive(xQueueUDPFrame, &frame, portMAX_DELAY) == pdTRUE)
+            {
+                if (is_connected)
+                {
+                    size_t offset = 0;
+                    uint32_t chunks = 0;
+                    while (offset < frame->len)
+                    {
+                        size_t to_send = frame->len - offset;
+                        if (to_send > MAX_UDP_CHUNK)
+                            to_send = MAX_UDP_CHUNK;
+
+                        int err = sendto(sock, frame->buf + offset, to_send, 0, (struct sockaddr *)&source_addr, sizeof(source_addr));
+                        if (err < 0)
+                        {
+                            ESP_LOGE(TAG, "Error sending chunk %u: errno %d", (unsigned)chunks, errno);
+                            break;
+                        }
+
+                        offset += to_send;
+                        ++chunks;
+                    }
+                    if (offset == frame->len)
+                    {
+                        ESP_LOGI(TAG, "Frame sent in %u chunks, size: %zu bytes", (unsigned)chunks, frame->len);
+                    }
+                }
+                esp_camera_fb_return(frame); // return after sending
+            }
         }
     }
 }
