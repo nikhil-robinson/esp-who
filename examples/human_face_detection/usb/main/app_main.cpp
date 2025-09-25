@@ -66,6 +66,17 @@ static uvc_fb_t *camera_fb_get_cb(void *cb_ctx)
     size_t out_len;
     if (frame2jpg(s_fb.cam_fb_p, 65, &jpeg_out, &out_len))
     {
+        if ((out_len == 0) && (jpeg_out == NULL)  )
+        {
+            esp_camera_fb_return(s_fb.cam_fb_p);
+            if (jpeg_out)
+            {
+                free(jpeg_out);
+                jpeg_out = NULL;
+            }
+            return NULL;
+        }
+        
         s_fb.uvc_fb.buf = jpeg_out;
         s_fb.uvc_fb.len = out_len;
         s_fb.uvc_fb.width = s_fb.cam_fb_p->width;
@@ -75,22 +86,22 @@ static uvc_fb_t *camera_fb_get_cb(void *cb_ctx)
     }
     else
     {
-        ESP_LOGE(TAG, "JPEG encoding failed");
         esp_camera_fb_return(s_fb.cam_fb_p);
         if (jpeg_out)
         {
             free(jpeg_out);
+            jpeg_out = NULL;
         }
         return NULL;
     }
 
     if (s_fb.uvc_fb.len > UVC_MAX_FRAMESIZE_SIZE)
     {
-        ESP_LOGE(TAG, "Frame size %d is larger than max frame size %d", s_fb.uvc_fb.len, UVC_MAX_FRAMESIZE_SIZE);
         esp_camera_fb_return(s_fb.cam_fb_p);
         if (jpeg_out)
         {
             free(jpeg_out);
+            jpeg_out = NULL;
         }
         return NULL;
     }
